@@ -129,3 +129,17 @@ You can help by adding a new language or improving the existing translation.
 
 ## License
 [MIT License](https://github.com/exelban/stats/blob/master/LICENSE)
+
+## Apple Silicon Fan Control
+
+If you are building Stats from source on Apple Silicon (M1/M2/M3), the automatic fan control helper installation (`SMJobBless`) may fail due to macOS security restrictions on ad-hoc signatures. 
+
+To enable fan control manually:
+
+1. Build the project and move `Stats.app` to `/Applications`.
+2. Run the manual installation script provided in the repository:
+   ```bash
+   sudo ./install_helper.sh
+   ```
+3. Restart `Stats.app`.
+4. (Optional) Check `/tmp/stats_helper.log` for diagnostic information if issues persist.
