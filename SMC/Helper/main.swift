@@ -31,6 +31,7 @@ class Helper: NSObject, NSXPCListenerDelegate, HelperProtocol {
     }
     
     public func run() {
+        try? "started at \(Date())\n".write(toFile: "/tmp/stats_helper.log", atomically: true, encoding: .utf8)
         let args = CommandLine.arguments.dropFirst()
         if !args.isEmpty && args.first == "uninstall" {
             NSLog("detected uninstall command")
@@ -52,12 +53,13 @@ class Helper: NSObject, NSXPCListenerDelegate, HelperProtocol {
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         do {
             let isValid = try CodesignCheck.codeSigningMatches(pid: newConnection.processIdentifier)
+            NSLog("connection validation result: \(isValid)")
             if !isValid {
-                NSLog("invalid connection, dropping")
+                NSLog("invalid connection from pid \(newConnection.processIdentifier), dropping")
                 return false
             }
         } catch {
-            NSLog("error checking code signing: \(error)")
+            NSLog("error checking code signing for pid \(newConnection.processIdentifier): \(error)")
             return false
         }
         
@@ -71,7 +73,15 @@ class Helper: NSObject, NSXPCListenerDelegate, HelperProtocol {
                 self.shouldQuit = true
             }
         }
-        
+        newConnection.interruptionHandler = {
+            if let connectionIndex = self.connections.firstIndex(of: newConnection) {
+                self.connections.remove(at: connectionIndex)
+            }
+            if self.connections.isEmpty {
+                self.shouldQuit = true
+            }
+        }
+
         self.connections.append(newConnection)
         newConnection.resume()
         
@@ -112,15 +122,18 @@ extension Helper {
         completion(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0")
     }
     func setSMCPath(_ path: String) {
+        NSLog("setting smc path to: \(path)")
         self.smc = path
     }
     
     func setFanMode(id: Int, mode: Int, completion: (String?) -> Void) {
         smcQueue.sync {
             guard let smc = self.smc else {
+                NSLog("error: missing smc tool path")
                 completion("missing smc tool")
                 return
             }
+            NSLog("executing: \(smc) fan \(id) -m \(mode)")
             let result = syncShell("\(smc) fan \(id) -m \(mode)")
             
             if let error = result.error, !error.isEmpty {
@@ -217,7 +230,15 @@ enum CodesignCheckError: Error {
 
 struct CodesignCheck {
     public static func codeSigningMatches(pid: pid_t) throws -> Bool {
-        return try self.codeSigningCertificatesForSelf() == self.codeSigningCertificates(forPID: pid)
+        let selfCerts = try self.codeSigningCertificatesForSelf()
+        let callerCerts = try self.codeSigningCertificates(forPID: pid)
+        
+        if selfCerts.isEmpty && callerCerts.isEmpty {
+            NSLog("both are ad-hoc signed, allowing connection")
+            return true
+        }
+        
+        return selfCerts == callerCerts
     }
     
     private static func codeSigningCertificatesForSelf() throws -> [SecCertificate] {

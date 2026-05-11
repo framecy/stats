@@ -1018,7 +1018,13 @@ public class SMCHelper {
                 self.connection = nil
             }
         }
-        
+        connection.interruptionHandler = {
+            self.connection?.interruptionHandler = nil
+            OperationQueue.main.addOperation {
+                self.connection = nil
+            }
+        }
+
         self.connection = connection
         self.connection?.resume()
         
@@ -1031,7 +1037,7 @@ public class SMCHelper {
             return nil
         }
         guard let service = helper.remoteObjectProxyWithErrorHandler({ error in
-            print(error)
+            NSLog("XPC error: \(error.localizedDescription) (\(error))")
         }) as? HelperProtocol else {
             completion?(false)
             return nil
