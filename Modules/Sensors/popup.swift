@@ -520,6 +520,8 @@ internal class FanView: NSStackView {
     
     private var willSleepMode: FanMode? = nil // fan mode before sleep
     private var willSleepSpeed: Int? = nil // fan speed before sleep
+    private var statusTimer: Timer? = nil
+    private static var hasAutoPrompted: Bool = false
     
     public init(_ fan: Fan, width: CGFloat, callback: @escaping (() -> Void)) {
         self.fan = fan
@@ -543,7 +545,20 @@ internal class FanView: NSStackView {
         
         self.nameAndSpeed()
         self.setupControls()
-        
+
+        self.statusTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            let isInstalled = SMCHelper.shared.isInstalled
+            if !isInstalled && !FanView.hasAutoPrompted {
+                FanView.hasAutoPrompted = true
+                SMCHelper.shared.install { status in
+                    NotificationCenter.default.post(name: .fanHelperState, object: nil, userInfo: ["state": status])
+                }
+            }
+            DispatchQueue.main.async {
+                self?.setupControls(isInstalled)
+            }
+        }
+
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(self.wakeListener), name: NSWorkspace.didWakeNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(self.sleepListener), name: NSWorkspace.willSleepNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.syncFanSpeed), name: .syncFansControl, object: nil)
@@ -627,7 +642,7 @@ internal class FanView: NSStackView {
         container.distribution = .fillProportionally
         container.spacing = 0
         
-        let button: NSButton = NSButton(title: localizedString("Install fan helper"), target: nil, action: #selector(self.installHelper))
+        let button: NSButton = NSButton(title: "权限状态: 未授权, 点击授权", target: nil, action: #selector(self.installHelper))
         button.isBordered = false
         button.target = self
         
